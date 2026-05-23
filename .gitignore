@@ -23,6 +23,12 @@ docker/zk-data/
 .DS_Store
 Thumbs.db
 
+# Personal files
+resume.txt
+resume_text.txt
+个人简历*.docx
+个人简历*.md
+
 # Environment files
 .env
 *.env.local
