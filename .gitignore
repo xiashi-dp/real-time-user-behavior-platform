@@ -1,0 +1,28 @@
+# Java / Maven
+flink-job/target/
+*.jar
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Docker runtime data
+docker/clickhouse-data/
+docker/zk-data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+*.env.local

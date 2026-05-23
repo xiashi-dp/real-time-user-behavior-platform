@@ -1,0 +1,14 @@
+apiVersion: 1
+
+datasources:
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    access: proxy
+    jsonData:
+      host: clickhouse
+      port: 8123
+      username: default
+      database: flink_db
+      protocol: http
+    secureJsonData:
+      password: "123456"

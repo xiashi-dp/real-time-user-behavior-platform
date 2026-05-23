@@ -1,0 +1,160 @@
+services:
+
+  # ========== HDFS ==========
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    ports:
+      - "9870:9870"
+      - "9001:9000"
+    environment:
+      - CLUSTER_NAME=offline-cluster
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+    volumes:
+      - namenode-data:/hadoop/dfs/name
+    networks:
+      - offline-net
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    depends_on:
+      - namenode
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+    volumes:
+      - datanode-data:/hadoop/dfs/data
+    networks:
+      - offline-net
+
+  # ========== Hive 元数据库 ==========
+  postgres-hive:
+    image: postgres:15
+    container_name: postgres-hive
+    environment:
+      POSTGRES_DB: metastore
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+    volumes:
+      - postgres-hive-data:/var/lib/postgresql/data
+    networks:
+      - offline-net
+
+  hive-metastore:
+    image: apache/hive:4.0.0
+    container_name: hive-metastore
+    depends_on:
+      - postgres-hive
+    ports:
+      - "9083:9083"
+    environment:
+      - SERVICE_NAME=metastore
+      - DB_TYPE=postgres
+      - DB_HOST=postgres-hive
+      - DB_PORT=5432
+      - DB_NAME=metastore
+      - DB_USER=hive
+      - DB_PASSWORD=hive
+    volumes:
+      - ./hive/hive-site.xml:/opt/hive/conf/hive-site.xml
+    networks:
+      - offline-net
+
+  hive-server:
+    image: apache/hive:4.0.0
+    container_name: hive-server
+    depends_on:
+      - hive-metastore
+      - namenode
+    ports:
+      - "10000:10000"
+    environment:
+      - SERVICE_NAME=hiveserver2
+      - SERVICE_OPTS=-Dhive.metastore.uris=thrift://hive-metastore:9083
+    volumes:
+      - ./hive/hive-site.xml:/opt/hive/conf/hive-site.xml
+    networks:
+      - offline-net
+
+  # ========== Spark ==========
+  spark-master:
+    image: apache/spark:3.5.0
+    container_name: spark-master
+    ports:
+      - "8083:8080"
+      - "7077:7077"
+    entrypoint: []
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    volumes:
+      - ../spark-etl:/opt/spark-etl
+    networks:
+      - offline-net
+
+  spark-worker:
+    image: apache/spark:3.5.0
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    entrypoint: []
+    environment:
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_MEMORY=1g
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    networks:
+      - offline-net
+
+  # ========== Airflow ==========
+  postgres-airflow:
+    image: postgres:15
+    container_name: postgres-airflow
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    volumes:
+      - postgres-airflow-data:/var/lib/postgresql/data
+    networks:
+      - offline-net
+
+  airflow:
+    image: apache/airflow:2.9.0
+    container_name: airflow
+    depends_on:
+      - postgres-airflow
+    ports:
+      - "8082:8080"
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres-airflow:5432/airflow
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__RBAC=True
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/scripts:/opt/airflow/scripts
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >
+      bash -c "
+        apt-get update -qq && apt-get install -y -qq docker.io >/dev/null 2>&1;
+        airflow db init &&
+        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com 2>/dev/null;
+        airflow webserver & airflow scheduler
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - offline-net
+
+networks:
+  offline-net:
+    driver: bridge
+
+volumes:
+  namenode-data:
+  datanode-data:
+  postgres-hive-data:
+  postgres-airflow-data:
